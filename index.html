@@ -246,9 +246,25 @@ async function apiPost(action, body={}) {
   </div>
 
   <div class="login-err" id="loginErr"></div>
+
+  <!-- ทดสอบ manual input (ลบออกได้ภายหลัง) -->
+  <div style="margin-top:.75rem;width:100%;">
+    <div style="display:flex;gap:.5rem;">
+      <input id="manualCode" type="text" placeholder="พิมพ์รหัสพนักงานทดสอบ"
+        style="flex:1;padding:.65rem .9rem;border-radius:10px;border:1px solid rgba(255,255,255,.3);
+        background:rgba(255,255,255,.1);color:#fff;font-size:.9rem;font-family:Sarabun,sans-serif;"
+        onkeydown="if(event.key==='Enter')testManual()">
+      <button onclick="testManual()"
+        style="padding:.65rem 1rem;border-radius:10px;border:none;background:rgba(255,255,255,.2);
+        color:#fff;font-size:.88rem;cursor:pointer;font-family:Sarabun,sans-serif;white-space:nowrap;">
+        ทดสอบ
+      </button>
+    </div>
+  </div>
+
   <div class="lock-note">
-    <i class="ti ti-lock"></i>
-    <span>สแกน QR/Barcode เท่านั้น</span>
+    <i class="ti ti-scan"></i>
+    <span>สแกน QR/Barcode หรือพิมพ์รหัสทดสอบ</span>
   </div>
 </div>
 
@@ -760,6 +776,11 @@ function submit(){
 function showOv(txt){document.getElementById('overlayTxt').textContent=txt;document.getElementById('overlay').classList.add('show');}
 function hideOv(){document.getElementById('overlay').classList.remove('show');}
 
+function testManual(){
+  const code=document.getElementById('manualCode').value.trim().toUpperCase();
+  if(!code){alert('กรุณาพิมพ์รหัสพนักงาน');return;}
+  onScanned(code);
+}
 function logout(){
   emp=null;issues=[];lastCode='';lastTime=0;
   document.getElementById('loginErr').classList.remove('show');
