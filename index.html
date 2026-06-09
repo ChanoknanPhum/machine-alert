@@ -429,7 +429,7 @@ async function apiPost(action, body={}) {
 <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.18.6/umd/index.min.js"></script>
 <script>
 // ── STATE ────────────────────────────────────────────────────
-let emp=null, selRow=null, selTick=null, issues=[], todayDisp='';
+let emp=null, selRow=null, selTick=null, issues=[], todayDisp='', nativeTimer=null;
 let codeReader=null, scanActive=false, devices=[], devIdx=0;
 let lastCode='', lastTime=0;
 
@@ -489,65 +489,85 @@ async function startCamera(){
 }
 
 async function openCamera(){
-  if(codeReader){ codeReader.reset(); codeReader=null; }
+  if(codeReader){codeReader.reset();codeReader=null;}
+  if(nativeTimer){clearInterval(nativeTimer);nativeTimer=null;}
   scanActive=true;
 
+  const deviceId=devices[devIdx]?.deviceId;
+  const videoConstraints=deviceId
+    ?{deviceId:{exact:deviceId},width:{ideal:1280},height:{ideal:720}}
+    :{facingMode:'environment',width:{ideal:1280},height:{ideal:720}};
+
+  // เปิด video stream ก่อน
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:videoConstraints});
+    const video=document.getElementById('camVideo');
+    video.srcObject=stream;
+    await video.play();
+  }catch(err){
+    document.getElementById('camStatusTxt').textContent='กล้องเปิดไม่ได้';
+    document.querySelector('.pulse-dot').style.background='#EF4444';
+    return;
+  }
+
+  document.getElementById('camStatusTxt').textContent='พร้อมสแกน — วางบัตรให้อยู่ในกรอบ';
+
+  // ── Engine 1: BarcodeDetector native (iOS 17+ / Android Chrome) ──
+  if('BarcodeDetector' in window){
+    try{
+      const detector=new BarcodeDetector({formats:[
+        'qr_code','code_128','code_39','code_93',
+        'ean_13','ean_8','data_matrix','itf','codabar','pdf417','aztec'
+      ]});
+      const video=document.getElementById('camVideo');
+      nativeTimer=setInterval(async()=>{
+        if(!scanActive||video.readyState<2) return;
+        try{
+          const results=await detector.detect(video);
+          if(results.length>0){
+            const code=results[0].rawValue.trim().toUpperCase();
+            const now=Date.now();
+            if(code===lastCode&&now-lastTime<2000) return;
+            lastCode=code;lastTime=now;
+            onScanned(code);
+          }
+        }catch(_){}
+      },150);
+      return; // BarcodeDetector ทำงานแล้ว
+    }catch(_){}
+  }
+
+  // ── Engine 2: ZXing fallback ──
   const hints=new Map();
   hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
-  hints.set(ZXing.DecodeHintType.ALSO_INVERTED,true);
   hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[
-    ZXing.BarcodeFormat.QR_CODE, ZXing.BarcodeFormat.CODE_128,
-    ZXing.BarcodeFormat.CODE_39, ZXing.BarcodeFormat.CODE_93,
-    ZXing.BarcodeFormat.EAN_13,  ZXing.BarcodeFormat.EAN_8,
-    ZXing.BarcodeFormat.DATA_MATRIX, ZXing.BarcodeFormat.ITF,
-    ZXing.BarcodeFormat.CODABAR, ZXing.BarcodeFormat.PDF_417,
-    ZXing.BarcodeFormat.AZTEC,
+    ZXing.BarcodeFormat.QR_CODE,ZXing.BarcodeFormat.CODE_128,
+    ZXing.BarcodeFormat.CODE_39,ZXing.BarcodeFormat.CODE_93,
+    ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,
+    ZXing.BarcodeFormat.DATA_MATRIX,ZXing.BarcodeFormat.ITF,
+    ZXing.BarcodeFormat.CODABAR,ZXing.BarcodeFormat.PDF_417,
   ]);
-  // scan ทุก 150ms แทน 200ms
-  codeReader=new ZXing.BrowserMultiFormatReader(hints,150);
-
-  const deviceId=devices[devIdx]?.deviceId;
-  const constraints={video:deviceId?{deviceId:{exact:deviceId}}:{facingMode:'environment'}};
-
+  codeReader=new ZXing.BrowserMultiFormatReader(hints,200);
+  const video=document.getElementById('camVideo');
   try{
-    await codeReader.decodeFromConstraints(constraints,'camVideo',(result,err)=>{
-      if(!scanActive) return;
-      if(result){
-        const code=result.getText().trim().toUpperCase();
-        const now=Date.now();
-        if(code===lastCode&&now-lastTime<3000) return;
-        lastCode=code; lastTime=now;
-        onScanned(code);
-      }
-      // show decode attempt in status (debug)
-      if(err && !(err instanceof ZXing.NotFoundException)) {
-        document.getElementById('camStatusTxt').textContent='⚠ '+err.message.substring(0,30);
-      }
+    await codeReader.decodeFromStream(video.srcObject,video,(result)=>{
+      if(!scanActive||!result) return;
+      const code=result.getText().trim().toUpperCase();
+      const now=Date.now();
+      if(code===lastCode&&now-lastTime<2000) return;
+      lastCode=code;lastTime=now;
+      onScanned(code);
     });
-    document.getElementById('camStatusTxt').textContent='พร้อมสแกน — วางบัตรให้อยู่ในกรอบ';
-  }catch(err){
-    // fallback: try without exact deviceId
-    try{
-      codeReader=new ZXing.BrowserMultiFormatReader(hints,200);
-      await codeReader.decodeFromConstraints({video:{facingMode:{ideal:'environment'}}}, 'camVideo',(result)=>{
-        if(!scanActive||!result) return;
-        const code=result.getText().trim().toUpperCase();
-        const now=Date.now();
-        if(code===lastCode&&now-lastTime<3000) return;
-        lastCode=code; lastTime=now;
-        onScanned(code);
-      });
-      document.getElementById('camStatusTxt').textContent='พร้อมสแกน';
-    }catch(e2){
-      document.getElementById('camStatusTxt').textContent='กล้องขัดข้อง';
-      document.querySelector('.pulse-dot').style.background='#EF4444';
-    }
-  }
+  }catch(_){}
 }
 
 function stopCamera(){
   scanActive=false;
-  if(codeReader){ codeReader.reset(); codeReader=null; }
+  if(nativeTimer){clearInterval(nativeTimer);nativeTimer=null;}
+  if(codeReader){codeReader.reset();codeReader=null;}
+  const v=document.getElementById('camVideo');
+  if(v&&v.srcObject){v.srcObject.getTracks().forEach(t=>t.stop());v.srcObject=null;}
+}
   const v=document.getElementById('camVideo');
   if(v?.srcObject){ v.srcObject.getTracks().forEach(t=>t.stop()); v.srcObject=null; }
 }
