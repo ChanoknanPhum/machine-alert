@@ -35,10 +35,10 @@ html,body{height:100%;font-family:"Sarabun",sans-serif;background:var(--bg);colo
 
 /* Camera live view */
 .cam-card{background:rgba(0,0,0,.35);border-radius:20px;width:100%;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,.12);}
-#camVideo{width:100%;display:block;max-height:52vw;object-fit:cover;background:#000;}
+#camVideo{width:100%;display:block;max-height:65vw;object-fit:cover;background:#000;}
 .cam-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;}
 .scan-frame{
-  width:58%;aspect-ratio:1.6;border-radius:12px;position:relative;
+  width:75%;aspect-ratio:1.4;border-radius:12px;position:relative;
   box-shadow:0 0 0 2000px rgba(0,0,0,.45);
 }
 .corner{position:absolute;width:22px;height:22px;border-color:#fff;border-style:solid;}
@@ -494,14 +494,17 @@ async function openCamera(){
 
   const hints=new Map();
   hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
+  hints.set(ZXing.DecodeHintType.ALSO_INVERTED,true);
   hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[
     ZXing.BarcodeFormat.QR_CODE, ZXing.BarcodeFormat.CODE_128,
     ZXing.BarcodeFormat.CODE_39, ZXing.BarcodeFormat.CODE_93,
     ZXing.BarcodeFormat.EAN_13,  ZXing.BarcodeFormat.EAN_8,
     ZXing.BarcodeFormat.DATA_MATRIX, ZXing.BarcodeFormat.ITF,
     ZXing.BarcodeFormat.CODABAR, ZXing.BarcodeFormat.PDF_417,
+    ZXing.BarcodeFormat.AZTEC,
   ]);
-  codeReader=new ZXing.BrowserMultiFormatReader(hints,200);
+  // scan ทุก 150ms แทน 200ms
+  codeReader=new ZXing.BrowserMultiFormatReader(hints,150);
 
   const deviceId=devices[devIdx]?.deviceId;
   const constraints={video:deviceId?{deviceId:{exact:deviceId}}:{facingMode:'environment'}};
@@ -516,8 +519,12 @@ async function openCamera(){
         lastCode=code; lastTime=now;
         onScanned(code);
       }
+      // show decode attempt in status (debug)
+      if(err && !(err instanceof ZXing.NotFoundException)) {
+        document.getElementById('camStatusTxt').textContent='⚠ '+err.message.substring(0,30);
+      }
     });
-    document.getElementById('camStatusTxt').textContent='พร้อมสแกน';
+    document.getElementById('camStatusTxt').textContent='พร้อมสแกน — วางบัตรให้อยู่ในกรอบ';
   }catch(err){
     // fallback: try without exact deviceId
     try{
